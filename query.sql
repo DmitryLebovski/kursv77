@@ -74,6 +74,7 @@ CREATE TABLE extra_condition(
 )
 
 ALTER TABLE executor ALTER COLUMN executor_username DROP NOT NULL;
+ALTER TABLE contract ALTER COLUMN contract_num UNIQUE;
 
 
 -- Данные для таблицы "head"
@@ -112,8 +113,38 @@ cn.agreement_term as "Срок действия" from contract cn
 JOIN head h on head_id = h.id
 JOIN executor ex on executor_id = ex.id
 
+SELECT 
+    cn.contract_num AS "Номер договора", 
+    cn.status AS "Статус", 
+    cn.agreement_object AS "Наименование договора", 
+    h.full_name AS "ФИО руководителя", 
+    h.phone_number AS "Номер телефона руководителя", 
+    h.email AS "Почта руководителя", 
+    ex.full_name AS "ФИО агента",
+    ex.phone_number AS "Номер телефона агента", 
+    ex.email AS "Почта агента",
+    ex.executor_position AS "Позиция агента",
+    ex.company_name AS "Компания", 
+    cn.conclusion_date AS "Дата заключения", 
+    cn.agreement_term AS "Срок действия",
+    cn.document_scan AS "Скан документа",
+    exc.agreement_extras AS "Дополнительные условия"
+FROM 
+    contract cn
+JOIN 
+    head h ON cn.head_id = h.id
+JOIN 
+    executor ex ON cn.executor_id = ex.id
+LEFT JOIN 
+    extra_condition exc ON cn.id = exc.contract_id;
+
 SELECT * from contract cn
 JOIN head h on head_id = h.id
 JOIN executor ex on executor_id = ex.id
 
+SELECT full_name FROM head h WHERE h.head_username = 'ivanov_ii';
+
 SELECT role FROM user_roles WHERE username = ivanov_ii
+
+ALTER TABLE contract
+ADD CONSTRAINT contract_num_unique UNIQUE (contract_num);
