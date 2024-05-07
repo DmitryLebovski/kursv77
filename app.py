@@ -1,15 +1,18 @@
-import sys
+import sys, re
 from PyQt6.QtWidgets import (QApplication, 
                             QWidget, 
-                            QVBoxLayout, 
+                            QVBoxLayout,
+                            QHBoxLayout, 
                             QLabel, 
                             QLineEdit, 
                             QPushButton, 
+                            QTextEdit,
                             QMessageBox, 
                             QTableWidget,
                             QTableWidgetItem, 
                             QDialog, 
-                            QDialogButtonBox)
+                            QComboBox,
+                            QCalendarWidget)
 from db import connect
 
 class LoginWindow(QWidget):
@@ -76,8 +79,8 @@ class MainWindow(QWidget):
         self.role = role
         self.setWindowTitle("Список договоров")
         layout = QVBoxLayout()
-        self.setFixedWidth(1440)
-        
+        self.setFixedWidth(1450)
+        self.setFixedHeight(420)            
         self.table = QTableWidget()
         self.table.setFixedHeight(300) 
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -94,8 +97,8 @@ class MainWindow(QWidget):
                     layout.addWidget(self.welcome_label)
                     layout.addWidget(self.status)
                     cursor.execute("SELECT cn.contract_num, cn.status, cn.agreement_object, h.full_name as head_name, " + 
-                                   "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
-                                   "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id")
+                                "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
+                                "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id")
                 elif role == "executor":
                     cursor.execute("SELECT ex.full_name FROM executor ex WHERE ex.executor_username = %s", (self.username,))
                     full_name_v = cursor.fetchone()[0]
@@ -106,9 +109,9 @@ class MainWindow(QWidget):
                     layout.addWidget(self.status)
                     layout.addWidget(self.status_add)
                     cursor.execute("SELECT cn.contract_num, cn.status, cn.agreement_object, h.full_name as head_name, "+
-                                   "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
-                                   "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id "+
-                                   "WHERE ex.executor_username = %s", (username,))
+                                "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
+                                "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id "+
+                                "WHERE ex.executor_username = %s", (username,))
                 records = cursor.fetchall()
                 self.populateTable(records)
             except Exception as error:
@@ -123,7 +126,7 @@ class MainWindow(QWidget):
         layout.addWidget(self.table)
         self.setLayout(layout)
 
-        self.logout_button = QPushButton("Выйти")
+        self.logout_button = QPushButton("Завершить работу")
         self.logout_button.clicked.connect(self.logout)
         layout.addWidget(self.logout_button)
 
@@ -136,7 +139,7 @@ class MainWindow(QWidget):
         self.table.setRowCount(len(records))
         self.table.setColumnCount(len(records[0]) + 1) 
         headers = ["Номер договора", "Статус", "Наименование договора", "ФИО руководителя", 
-                   "ФИО агента", "Компания", "Дата заключения", "Срок действия", "Полная информация"]
+                "ФИО агента", "Компания", "Дата заключения", "Срок действия", "Полная информация"]
         self.table.setHorizontalHeaderLabels(headers)
 
         for i, row in enumerate(records):
@@ -149,20 +152,20 @@ class MainWindow(QWidget):
 
     def openContract(self, row_index):
         headers = ["Номер договора", 
-                   "Статус", 
-                   "Наименование договора", 
-                   "ФИО руководителя", 
-                   "Номер телефона руководителя", 
-                   "Почта руководителя",
-                   "ФИО агента", 
-                   "Номер телефона агента",
-                   "Почта агента",
-                   "Позиция агента",
-                   "Компания", 
-                   "Дата заключения", 
-                   "Срок действия",
-                   "Скан документа",
-                   "Дополнительные условия"]
+                "Статус", 
+                "Наименование договора", 
+                "ФИО руководителя", 
+                "Номер телефона руководителя", 
+                "Почта руководителя",
+                "ФИО агента", 
+                "Номер телефона агента",
+                "Почта агента",
+                "Позиция агента",
+                "Компания", 
+                "Дата заключения", 
+                "Срок действия",
+                "Скан документа",
+                "Дополнительные условия"]
         contract_data = self.table.item(row_index, 0).text()
         contract_window = ContractWindow(self.username, self.password, self.role, contract_data, headers)
         contract_window.exec()
@@ -171,7 +174,7 @@ class ContractWindow(QDialog):
     def __init__(self, username, password, role, contract_data, headers):
         super().__init__()
         self.setWindowTitle("Данные договора")
-        self.setGeometry(0, 0, 300, 900)
+        self.setGeometry(0, 0, 500, 900)
         layout = QVBoxLayout()
         self.username = username
         self.password = password
@@ -206,7 +209,7 @@ class ContractWindow(QDialog):
                     LEFT JOIN 
                         extra_condition exc ON cn.id = exc.contract_id
                     WHERE cn.contract_num = %s""", (contract_data,))
-                result = cursor.fetchall()
+                result = cursor.fetchone()
             except Exception as error:
                 print("Ошибка при подгрузке данных с PostgreSQL:", error)
                 QMessageBox.warning(self, "Ошибка БД", "Данные контракта. Ошибка при подгрузке данных с БД.")
@@ -216,24 +219,45 @@ class ContractWindow(QDialog):
                 cursor.close()
                 connection.close()
 
-        for row in result:
-            for i, (value, header) in enumerate(zip(row, headers)):
-                label = QLabel(header)
-                line_edit = QLineEdit()
-                line_edit.setText(str(value))
-                if role == "head" or headers[i] in ["Дата заключения", "Срок действия", "Скан документа", "Дополнительные условия"]:
+        for i, (header, value) in enumerate(zip(headers, result)):
+            label = QLabel(header)
+            if header == "Статус":
+                combo_box = QComboBox()
+                combo_box.addItems(["Создан", "Согласован/В работе", "Закрыт"])
+                combo_box.setCurrentText(value)
+                layout.addWidget(label)
+                layout.addWidget(combo_box)
+            elif header in ["Дата заключения", "Срок действия"]:
+                calendar_widget = QCalendarWidget()
+                calendar_widget.setSelectedDate(value)
+                h_layout = QHBoxLayout()
+                h_layout.addWidget(label)
+                h_layout.addWidget(calendar_widget)
+                layout.addLayout(h_layout)
+            elif header == "Дополнительные условия":
+                text_edit = QTextEdit()
+                text_edit.setPlainText(value)
+                h_layout = QHBoxLayout()
+                h_layout.addWidget(label)
+                h_layout.addWidget(text_edit)
+                layout.addLayout(h_layout)
+            else:
+                line_edit = QLineEdit(str(value))
+                if (role == "head"):
                     line_edit.setReadOnly(False)
                 else:
                     line_edit.setReadOnly(True)
-                layout.addWidget(label)
-                layout.addWidget(line_edit)
+                h_layout = QHBoxLayout()
+                h_layout.addWidget(label)
+                h_layout.addWidget(line_edit)
+                layout.addLayout(h_layout)
 
-        button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok)
-        button_box.accepted.connect(self.accept)
-        layout.addWidget(button_box)
+        save_button = QPushButton("Сохранить")
+        save_button.clicked.connect(self.accept)
+        layout.addWidget(save_button)
 
         self.setLayout(layout)
-
+        
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     login_window = LoginWindow()
