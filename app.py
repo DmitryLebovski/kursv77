@@ -82,7 +82,7 @@ class MainWindow(QWidget):
         self.setFixedWidth(1450)
         self.setFixedHeight(420)
         self.table = QTableWidget()
-        self.table.setFixedHeight(250)
+        self.table.setFixedHeight(300)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         connection = connect(self.username, self.password)
@@ -93,15 +93,15 @@ class MainWindow(QWidget):
                     cursor.execute("SELECT h.full_name FROM head h WHERE h.head_username =  %s", (self.username,))
                     full_name_v = cursor.fetchone()[0]
                     self.welcome_label = QLabel(f"Здравствуйте, {full_name_v}!")
-                    self.status = QLabel(f"Статус пользователя: Руководитель, Вы можете редактировать, добавлять, согласовывать, закрывать договоры")
+                    self.status = QLabel(f"Статус пользователя: Руководитель, Вы имеете полный доступ к договорам.")
                     self.layoutQV.addWidget(self.welcome_label)
                     self.layoutQV.addWidget(self.status)
                 elif self.role == "executor":
                     cursor.execute("SELECT ex.full_name FROM executor ex WHERE ex.executor_username = %s", (self.username,))
                     full_name_v = cursor.fetchone()[0]
                     self.welcome_label = QLabel(f"Здравствуйте, {full_name_v}!")
-                    self.status = QLabel(f"Статус пользователя: Агент, Вы можете редактировать только Дату заключения, Срок действия, Скан документа и Доп. информацию только в течении статуса 'Создано'")
-                    self.status_add = QLabel(f"Как только статус договора будет изменен Руководителем - дальнейшее редактирование запрещено")
+                    self.status = QLabel(f"Статус пользователя: Агент, Вы можете редактировать разрешенную информацию только в течении статуса 'Создано'.")
+                    self.status_add = QLabel(f"Как только статус договора будет изменен Руководителем - дальнейшее редактирование недоступно.")
                     self.layoutQV.addWidget(self.welcome_label)
                     self.layoutQV.addWidget(self.status)
                     self.layoutQV.addWidget(self.status_add)
@@ -248,6 +248,7 @@ class ContractWindow(QDialog):
                 layout.addWidget(label)
                 layout.addWidget(combo_box)
                 self.fields[header] = combo_box
+                if role == "executor": combo_box.setEnabled(False)
             elif header in ["Дата заключения", "Срок действия"]:
                 calendar_widget = QCalendarWidget()
                 calendar_widget.setSelectedDate(value)
@@ -264,17 +265,32 @@ class ContractWindow(QDialog):
                 h_layout.addWidget(text_edit)
                 layout.addLayout(h_layout)
                 self.fields[header] = text_edit
-            else:
+            elif role == "head" and header not in ["ФИО агента", "Номер телефона агента", "Почта агента", "Позиция агента", "Компания"]:
                 line_edit = QLineEdit(str(value))
-                if role == "head":
-                    line_edit.setReadOnly(False)
-                else:
-                    line_edit.setReadOnly(True)
+                line_edit.setReadOnly(False)
                 h_layout = QHBoxLayout()
                 h_layout.addWidget(label)
                 h_layout.addWidget(line_edit)
                 layout.addLayout(h_layout)
                 self.fields[header] = line_edit
+            elif role == "executor" and header not in ["Номер договора", "Наименование договора", "ФИО руководителя", "Номер телефона руководителя", "Почта руководителя"]:
+                line_edit = QLineEdit(str(value))
+                line_edit.setReadOnly(False)
+                h_layout = QHBoxLayout()
+                h_layout.addWidget(label)
+                h_layout.addWidget(line_edit)
+                layout.addLayout(h_layout)
+                self.fields[header] = line_edit
+            else:
+                line_edit = QLineEdit(str(value))
+                line_edit.setReadOnly(True)
+                line_edit.setEnabled(False)
+                h_layout = QHBoxLayout()
+                h_layout.addWidget(label)
+                h_layout.addWidget(line_edit)
+                layout.addLayout(h_layout)
+                self.fields[header] = line_edit
+
 
         save_button = QPushButton("Сохранить")
         save_button.clicked.connect(self.save_data)
@@ -301,26 +317,60 @@ class ContractWindow(QDialog):
             if connection:
                 cursor = connection.cursor()
                 try:
-                    if self.role == "executer":
-                        update_query = """
+                    if self.role == "executor":
+                        update_contract = """
                             UPDATE contract
                             SET 
                                 conclusion_date = %s, 
                                 agreement_term = %s,
                                 document_scan = %s
-                            WHERE id = %s
+                            WHERE id = %s;
                         """
-                        cursor.execute(update_query, (
+                        cursor.execute(update_contract, (
                             self.fields["Дата заключения"].selectedDate().toString("dd-MM-yyyy"),
-                            self.fields["Срок действия"].selectedDate().toString("yyyy-MM-dd"),
+                            self.fields["Срок действия"].selectedDate().toString("dd-MM-yyyy"),
                             self.fields["Скан документа"].text(),
                             self.contract_id
                         ))
+
+                        update_executor = """
+                            UPDATE executor AS ex
+                            SET 
+                                full_name = %s,
+                                phone_number = %s,
+                                email = %s,
+                                executor_position = %s,
+                                company_name = %s
+                            WHERE 
+                                ex.id = (SELECT executor_id FROM contract WHERE id = %s);
+                        """
+                        cursor.execute(update_executor, (
+                            self.fields["ФИО агента"].text(),
+                            self.fields["Номер телефона агента"].text(),
+                            self.fields["Почта агента"].text(),
+                            self.fields["Позиция агента"].text(),
+                            self.fields["Компания"].text(),
+                            self.contract_id
+                        ))
+
+                        update_extra_condition = """
+                            UPDATE extra_condition AS exc
+                            SET 
+                                agreement_extras = %s
+                            FROM contract cn
+                            WHERE 
+                                cn.id = exc.contract_id
+                                AND cn.id = %s;
+                        """
+                        cursor.execute(update_extra_condition, (
+                            self.fields["Дополнительные условия"].toPlainText(),
+                            self.contract_id
+                        ))
                         connection.commit()
-                        self.main_window.reloadTable()
                         QMessageBox.information(self, "Успех", "Данные успешно обновлены.")
+                        self.main_window.reloadTable()
                     else:
-                        update_query = """
+                        update_contract = """
                             UPDATE contract
                             SET 
                                 contract_num = %s, 
@@ -331,7 +381,7 @@ class ContractWindow(QDialog):
                                 document_scan = %s 
                             WHERE id = %s;
                         """
-                        cursor.execute(update_query, (
+                        cursor.execute(update_contract, (
                             self.fields["Номер договора"].text(),
                             self.fields["Статус"].currentText(),
                             self.fields["Наименование договора"].text(),
@@ -340,6 +390,23 @@ class ContractWindow(QDialog):
                             self.fields["Скан документа"].text(),
                             self.contract_id
                         ))
+
+                        update_executor = """
+                        UPDATE head AS h
+                        SET 
+                            full_name = %s,
+                            phone_number = %s,
+                            email = %s
+                        WHERE 
+                            h.id = (SELECT head_id FROM contract WHERE id = %s);
+                        """
+                        cursor.execute(update_executor, (
+                            self.fields["ФИО руководителя"].text(),
+                            self.fields["Номер телефона руководителя"].text(),
+                            self.fields["Почта руководителя"].text(),
+                            self.contract_id
+                        ))
+
                         connection.commit()
                         self.main_window.reloadTable()
                         QMessageBox.information(self, "Успех", "Данные успешно обновлены.")
