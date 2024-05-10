@@ -7,6 +7,7 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO head;
 -- Роль executor может управлять только таблицами contract и extra_condition, но видеть все таблицы
 GRANT SELECT, INSERT, UPDATE, DELETE ON contract TO executor;
 GRANT SELECT, INSERT, UPDATE, DELETE ON extra_condition TO executor;
+GRANT SELECT, INSERT, UPDATE, DELETE ON executor TO executor;
 
 CREATE USER ivanov_ii PASSWORD '12345';
 CREATE USER smirnov_av PASSWORD '12345';
@@ -47,14 +48,14 @@ CREATE TABLE executor(
 	email varchar(100) NOT NULL,
 	company_name varchar(100),
 	executor_position varchar(100) NOT NULL,
-	executor_username VARCHAR(50) not NULL,
+	executor_username VARCHAR(50) NOT NULL,
 	head_id INT,
 	FOREIGN KEY (head_id) REFERENCES head(id)
 )
 
 CREATE TABLE contract(
 	id serial PRIMARY KEY,
-	contract_num VARCHAR(50) NOT NULL,
+	contract_num VARCHAR(50) UNIQUE NOT NULL,
 	conclusion_date DATE NOT NULL,
 	agreement_term DATE NOT NULL,
 	agreement_object TEXT,
@@ -79,15 +80,15 @@ ALTER TABLE contract ALTER COLUMN contract_num UNIQUE;
 
 -- Данные для таблицы "head"
 INSERT INTO head (full_name, phone_number, email, head_username) VALUES
-('Иванов Иван Иванович', '+7 (999) 123-45-67', 'ivanov@example.com', 'ivanov_ii'),
-('Петров Петр Петрович', '+7 (999) 987-65-43', 'petrov@example.com', 'petrov_pp'),
-('Сидорова Анна Сергеевна', '+7 (999) 543-21-09', 'sidorova@example.com', 'sidorova_as');
+('Иванов Иван Иванович', '+7(999)123-45-67', 'ivanov@example.com', 'ivanov_ii'),
+('Петров Петр Петрович', '+7(999)987-65-43', 'petrov@example.com', 'petrov_pp'),
+('Сидорова Анна Сергеевна', '+7(999)543-21-09', 'sidorova@example.com', 'sidorova_as');
 
 -- Данные для таблицы "executor"
 INSERT INTO executor (full_name, phone_number, email, company_name, executor_position, executor_username, head_id) VALUES
-('Смирнов Алексей Владимирович', '+7 (999) 111-22-33', 'smirnov@example.com', 'ООО "Прогресс"', 'Генеральный директор', 'smirnov_av', 1),
-('Кузнецова Елена Игоревна', '+7 (999) 444-55-66', 'kuznetsova@example.com', 'ООО "СтройИнвест"', 'Главный инженер', 'kuznetsova_ei', 2),
-('Никитин Денис Александрович', '+7 (999) 777-88-99', 'nikitin@example.com', 'ООО "ТехноСервис"', 'Финансовый директор', 'nikitin_da', 3);
+('Смирнов Алексей Владимирович', '+7(999)111-22-33', 'smirnov@example.com', 'ООО "Прогресс"', 'Генеральный директор', 'smirnov_av', 1),
+('Кузнецова Елена Игоревна', '+7(999)444-55-66', 'kuznetsova@example.com', 'ООО "СтройИнвест"', 'Главный инженер', 'kuznetsova_ei', 2),
+('Никитин Денис Александрович', '+7(999)777-88-99', 'nikitin@example.com', 'ООО "ТехноСервис"', 'Финансовый директор', 'nikitin_da', 3);
 
 -- Данные для таблицы "contract"
 INSERT INTO contract (contract_num, conclusion_date, agreement_term, agreement_object, status, executor_id, head_id) VALUES
@@ -105,6 +106,9 @@ SELECT * FROM head
 SELECT * FROM executor
 SELECT * FROM contract
 SELECT * FROM extra_condition
+
+DELETE FROM contract
+DELETE FROM extra_condition
 
 SELECT cn.contract_num as "Номер договора", cn.status as "Статус", cn.agreement_object as "Наименование договора", 
 h.full_name as "ФИО руководителя", ex.full_name as "ФИО агента", 
@@ -138,7 +142,8 @@ JOIN
 LEFT JOIN 
     extra_condition exc ON cn.id = exc.contract_id;
 
-SELECT * from contract cn
+update contract set contract_num='kt-00000' where id = '0'
+select * from contract
 JOIN head h on head_id = h.id
 JOIN executor ex on executor_id = ex.id
 
@@ -148,3 +153,17 @@ SELECT role FROM user_roles WHERE username = ivanov_ii
 
 ALTER TABLE contract
 ADD CONSTRAINT contract_num_unique UNIQUE (contract_num);
+
+-- ТРИГГЕРЫ
+CREATE OR REPLACE FUNCTION update_contract_trigger()
+RETURNS TRIGGER AS $$
+BEGIN
+    NOTIFY contract_updated;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER contract_update_trigger
+AFTER UPDATE ON contract
+FOR EACH ROW
+EXECUTE FUNCTION update_contract_trigger();
