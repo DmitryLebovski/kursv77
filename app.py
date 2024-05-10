@@ -78,42 +78,33 @@ class MainWindow(QWidget):
         self.password = password
         self.role = role
         self.setWindowTitle("Список договоров")
-        layout = QVBoxLayout()
+        self.layoutQV = QVBoxLayout()
         self.setFixedWidth(1450)
         self.setFixedHeight(420)
         self.table = QTableWidget()
-        self.table.setFixedHeight(300)
+        self.table.setFixedHeight(250)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
-        connection = connect(username, password)
+        connection = connect(self.username, self.password)
         if connection:
             cursor = connection.cursor()
             try:
-                if role == "head":
+                if self.role == "head":
                     cursor.execute("SELECT h.full_name FROM head h WHERE h.head_username =  %s", (self.username,))
                     full_name_v = cursor.fetchone()[0]
                     self.welcome_label = QLabel(f"Здравствуйте, {full_name_v}!")
                     self.status = QLabel(f"Статус пользователя: Руководитель, Вы можете редактировать, добавлять, согласовывать, закрывать договоры")
-                    layout.addWidget(self.welcome_label)
-                    layout.addWidget(self.status)
-                    cursor.execute("SELECT cn.id, cn.contract_num, cn.status, cn.agreement_object, h.full_name as head_name, " +
-                                "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
-                                "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id")
-                elif role == "executor":
+                    self.layoutQV.addWidget(self.welcome_label)
+                    self.layoutQV.addWidget(self.status)
+                elif self.role == "executor":
                     cursor.execute("SELECT ex.full_name FROM executor ex WHERE ex.executor_username = %s", (self.username,))
                     full_name_v = cursor.fetchone()[0]
                     self.welcome_label = QLabel(f"Здравствуйте, {full_name_v}!")
                     self.status = QLabel(f"Статус пользователя: Агент, Вы можете редактировать только Дату заключения, Срок действия, Скан документа и Доп. информацию только в течении статуса 'Создано'")
                     self.status_add = QLabel(f"Как только статус договора будет изменен Руководителем - дальнейшее редактирование запрещено")
-                    layout.addWidget(self.welcome_label)
-                    layout.addWidget(self.status)
-                    layout.addWidget(self.status_add)
-                    cursor.execute("SELECT cn.id, cn.contract_num, cn.status, cn.agreement_object, h.full_name as head_name, "+
-                                "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
-                                "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id "+
-                                "WHERE ex.executor_username = %s", (username,))
-                records = cursor.fetchall()
-                self.reloadTable(records)
+                    self.layoutQV.addWidget(self.welcome_label)
+                    self.layoutQV.addWidget(self.status)
+                    self.layoutQV.addWidget(self.status_add)
             except Exception as error:
                 print("Ошибка при подгрузке данных с PostgreSQL:", error)
                 QMessageBox.warning(self, "Ошибка БД", "Ошибка при подгрузке данных с БД.")
@@ -123,20 +114,44 @@ class MainWindow(QWidget):
                 cursor.close()
                 connection.close()
 
-        layout.addWidget(self.table)
-        self.setLayout(layout)
+        self.reloadTable()
+
+        self.layoutQV.addWidget(self.table)
+        self.setLayout(self.layoutQV)
 
         self.logout_button = QPushButton("Завершить работу")
         self.logout_button.clicked.connect(self.logout)
-        layout.addWidget(self.logout_button)
-
+        self.layoutQV.addWidget(self.logout_button)
 
     def logout(self):
         login_window = LoginWindow()
         login_window.show()
         self.close()
 
-    def reloadTable(self, records):
+    def reloadTable(self):
+        connection = connect(self.username, self.password)
+        if connection:
+            cursor = connection.cursor()
+            try:
+                if self.role == "head":
+                    cursor.execute("SELECT cn.id, cn.contract_num, cn.status, cn.agreement_object, h.full_name as head_name, " +
+                                "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
+                                "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id")
+                elif self.role == "executor":
+                    cursor.execute("SELECT cn.id, cn.contract_num, cn.status, cn.agreement_object, h.full_name as head_name, "+
+                                "ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term "+
+                                "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id "+
+                                "WHERE ex.executor_username = %s", (self.username,))
+                records = cursor.fetchall()
+            except Exception as error:
+                print("Ошибка при подгрузке данных с PostgreSQL:", error)
+                QMessageBox.warning(self, "Ошибка БД", "Ошибка при подгрузке данных с БД.")
+                cursor.close()
+                connection.close()
+            finally:
+                cursor.close()
+                connection.close()
+
         self.table.setRowCount(len(records))
         self.table.setColumnCount(len(records[0])) 
         headers = ["Номер договора", "Статус", "Наименование договора", "ФИО руководителя",
@@ -296,12 +311,13 @@ class ContractWindow(QDialog):
                             WHERE id = %s
                         """
                         cursor.execute(update_query, (
-                            self.fields["Дата заключения"].selectedDate().toString("yyyy-MM-dd"),
+                            self.fields["Дата заключения"].selectedDate().toString("dd-MM-yyyy"),
                             self.fields["Срок действия"].selectedDate().toString("yyyy-MM-dd"),
                             self.fields["Скан документа"].text(),
                             self.contract_id
                         ))
                         connection.commit()
+                        self.main_window.reloadTable()
                         QMessageBox.information(self, "Успех", "Данные успешно обновлены.")
                     else:
                         update_query = """
@@ -325,6 +341,7 @@ class ContractWindow(QDialog):
                             self.contract_id
                         ))
                         connection.commit()
+                        self.main_window.reloadTable()
                         QMessageBox.information(self, "Успех", "Данные успешно обновлены.")
                 except Exception as error:
                     print("Ошибка при обновлении данных в PostgreSQL:", error)
