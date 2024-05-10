@@ -60,6 +60,8 @@ class LoginWindow(QWidget):
             except Exception as error:
                 print("Ошибка при выполнении SQL запроса:", error)
                 QMessageBox.warning(self, "Ошибка БД", "Ошибка при выполнении SQL запроса.")
+                cursor.close()
+                connection.close()
             finally:
                 cursor.close()
                 connection.close()
@@ -79,8 +81,8 @@ class MainWindow(QWidget):
         self.role = role
         self.setWindowTitle("Список договоров")
         self.layoutQV = QVBoxLayout()
-        self.setFixedWidth(1450)
-        self.setFixedHeight(420)
+        self.setFixedWidth(1550)
+        self.setFixedHeight(500)
         self.table = QTableWidget()
         self.table.setFixedHeight(300)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -105,6 +107,10 @@ class MainWindow(QWidget):
                     self.layoutQV.addWidget(self.welcome_label)
                     self.layoutQV.addWidget(self.status)
                     self.layoutQV.addWidget(self.status_add)
+                update_buttom = QPushButton("Обновить таблицу")
+                update_buttom.setFixedWidth(130)
+                update_buttom.clicked.connect(self.reloadTable)
+                self.layoutQV.addWidget(update_buttom)
             except Exception as error:
                 print("Ошибка при подгрузке данных с PostgreSQL:", error)
                 QMessageBox.warning(self, "Ошибка БД", "Ошибка при подгрузке данных с БД.")
@@ -156,15 +162,50 @@ class MainWindow(QWidget):
         self.table.setColumnCount(len(records[0])) 
         headers = ["Номер договора", "Статус", "Наименование договора", "ФИО руководителя",
                    "ФИО агента", "Компания", "Дата заключения", "Срок действия", "Полная информация"]
+        if self.role == "head": 
+            self.table.setColumnCount(len(records[0]) + 1) 
+            headers.append("Удалить договор")
         self.table.setHorizontalHeaderLabels(headers)
 
         for i, row in enumerate(records):
             for j, value in enumerate(row[1:]): 
                 self.table.setItem(i, j, QTableWidgetItem(str(value)))
             open_button = QPushButton("Открыть")
-            open_button.clicked.connect(lambda _, i=i: self.openContract(records[i][0])) 
-            self.table.setCellWidget(i, len(row) - 1, open_button)  
+            open_button.clicked.connect(lambda _, i=i: self.openContract(records[i][0]))
+            self.table.setCellWidget(i, len(row) - 1, open_button)
+
+            if self.role == "head":
+                delete_button = QPushButton("Удалить")
+                delete_button.clicked.connect(lambda _, i=i: self.confirm_delete(records[i][0]))
+                self.table.setCellWidget(i, len(row), delete_button)  
         self.table.resizeColumnsToContents()
+
+    def confirm_delete(self, contract_id):
+        confirm_dialog = QMessageBox.question(self, "Подтверждение удаления",
+                                                "Вы уверены, что хотите удалить договор?",
+                                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if confirm_dialog == QMessageBox.StandardButton.Yes:
+            self.delete_contract(contract_id)
+        else:
+            pass 
+
+    def delete_contract(self, contract_id):
+        connection = connect(self.username, self.password)
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("DELETE FROM extra_condition WHERE contract_id = %s", (contract_id,))
+                cursor.execute("DELETE from contract where id = %s", (contract_id,))
+                connection.commit()
+                self.reloadTable()
+                QMessageBox.information(self, "Успех", "Договор успешно удален.")
+            except Exception as error:
+                print("Ошибка при подгрузке данных с PostgreSQL:", error)
+                QMessageBox.warning(self, "Ошибка БД", "Ошибка при удалении данных из БД.")
+            finally:
+                cursor.close()
+                connection.close()
+
 
     def openContract(self, contract_id): 
         headers = ["Номер договора",
@@ -327,8 +368,8 @@ class ContractWindow(QDialog):
                             WHERE id = %s;
                         """
                         cursor.execute(update_contract, (
-                            self.fields["Дата заключения"].selectedDate().toString("dd-MM-yyyy"),
-                            self.fields["Срок действия"].selectedDate().toString("dd-MM-yyyy"),
+                            self.fields["Дата заключения"].selectedDate().toString("yyyy-MM-dd"),
+                            self.fields["Срок действия"].selectedDate().toString("yyyy-MM-dd"),
                             self.fields["Скан документа"].text(),
                             self.contract_id
                         ))
@@ -391,7 +432,7 @@ class ContractWindow(QDialog):
                             self.contract_id
                         ))
 
-                        update_executor = """
+                        update_head = """
                         UPDATE head AS h
                         SET 
                             full_name = %s,
@@ -400,10 +441,24 @@ class ContractWindow(QDialog):
                         WHERE 
                             h.id = (SELECT head_id FROM contract WHERE id = %s);
                         """
-                        cursor.execute(update_executor, (
+                        cursor.execute(update_head, (
                             self.fields["ФИО руководителя"].text(),
                             self.fields["Номер телефона руководителя"].text(),
                             self.fields["Почта руководителя"].text(),
+                            self.contract_id
+                        ))
+                        
+                        update_extra_condition = """
+                            UPDATE extra_condition AS exc
+                            SET 
+                                agreement_extras = %s
+                            FROM contract cn
+                            WHERE 
+                                cn.id = exc.contract_id
+                                AND cn.id = %s;
+                        """
+                        cursor.execute(update_extra_condition, (
+                            self.fields["Дополнительные условия"].toPlainText(),
                             self.contract_id
                         ))
 
@@ -414,6 +469,8 @@ class ContractWindow(QDialog):
                     print("Ошибка при обновлении данных в PostgreSQL:", error)
                     QMessageBox.warning(self, "Ошибка БД", "Сохранение изменений. Ошибка при обновлении данных в БД.")
                     connection.rollback()
+                    cursor.close()
+                    connection.close()
                 else:
                     connection.commit()
                 finally:

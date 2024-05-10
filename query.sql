@@ -8,6 +8,7 @@ GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO head;
 GRANT SELECT, INSERT, UPDATE, DELETE ON contract TO executor;
 GRANT SELECT, INSERT, UPDATE, DELETE ON extra_condition TO executor;
 GRANT SELECT, INSERT, UPDATE, DELETE ON executor TO executor;
+GRANT SELECT ON head TO executor;
 
 CREATE USER ivanov_ii PASSWORD '12345';
 CREATE USER smirnov_av PASSWORD '12345';
@@ -30,8 +31,6 @@ DROP TABLE head
 DROP TABLE executor
 DROP TABLE contract
 DROP TABLE extra_condition
-
-
 
 CREATE TABLE head(
 	id serial PRIMARY KEY,
@@ -91,13 +90,16 @@ INSERT INTO executor (full_name, phone_number, email, company_name, executor_pos
 ('Никитин Денис Александрович', '+7(999)777-88-99', 'nikitin@example.com', 'ООО "ТехноСервис"', 'Финансовый директор', 'nikitin_da', 3);
 
 -- Данные для таблицы "contract"
-INSERT INTO contract (contract_num, conclusion_date, agreement_term, agreement_object, status, executor_id, head_id) VALUES
+INSERT INTO contract (contract_num, conclusion_date, agreement_term, agreement_object, status, executor_id, head_id) VALUES ('КТ-005', '2000-02-10', '2025-08-10', 'без доп условий', 'Закрыт', 1, 3);
+
 ('КТ-001', '2024-04-15', '2024-10-15', 'Строительство жилого комплекса', 'Действующий', 1, 1),
 ('КТ-002', '2024-03-20', '2024-09-20', 'Разработка программного обеспечения', 'В ожидании', 2, 2),
 ('КТ-003', '2024-02-10', '2024-08-10', 'Поставка оборудования', 'Закрыт', 3, 3);
+('КТ-004', '2000-02-10', '2025-08-10', 'Проверка удаления', 'Закрыт', 1, 3);
+
 
 -- Данные для таблицы "extra_condition"
-INSERT INTO extra_condition (agreement_extras, contract_id) VALUES
+INSERT INTO extra_condition (agreement_extras, contract_id) VALUES 
 ('Дополнительные работы по благоустройству прилегающей территории', 1),
 ('Обязательное обучение сотрудников', 2),
 ('Гарантийное обслуживание на 2 года', 3);
@@ -106,6 +108,9 @@ SELECT * FROM head
 SELECT * FROM executor
 SELECT * FROM contract
 SELECT * FROM extra_condition
+
+DELETE from extra_condition where contract_id=(select id from contract where contract_num='апдейт')
+DELETE from contract where id'апдейт'
 
 DELETE FROM contract
 DELETE FROM extra_condition
@@ -141,6 +146,41 @@ JOIN
     executor ex ON cn.executor_id = ex.id
 LEFT JOIN 
     extra_condition exc ON cn.id = exc.contract_id;
+	
+	
+UPDATE contract AS cn
+SET 
+	contract_num = 'апдейт'
+WHERE id = 1;
+
+
+UPDATE executor AS ex
+SET 
+	full_name = 'tetsetesatest',
+	email = 'tetsetesatest',
+	executor_position = 'tetsetesatest',
+	company_name = 'tetsetesatest'
+WHERE 
+	ex.id = (SELECT executor_id FROM contract WHERE id = 1);
+
+
+UPDATE head AS h
+SET 
+	full_name = 'tetsetesatest',
+	email = 'tetsetesatest'
+WHERE 
+	h.id = (SELECT head_id FROM contract WHERE id = 1);
+
+
+UPDATE extra_condition AS exc
+SET 
+    agreement_extras = 'agr test'
+FROM contract cn
+WHERE 
+    cn.id = exc.contract_id
+    AND cn.id = 1;
+
+
 
 update contract set contract_num='kt-00000' where id = '0'
 select * from contract
@@ -167,3 +207,5 @@ CREATE TRIGGER contract_update_trigger
 AFTER UPDATE ON contract
 FOR EACH ROW
 EXECUTE FUNCTION update_contract_trigger();
+
+
