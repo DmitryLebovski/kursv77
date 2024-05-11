@@ -85,7 +85,6 @@ class MainWindow(QWidget):
         self.setWindowTitle("Список договоров")
         self.layoutQV = QVBoxLayout()
         self.setFixedWidth(1550)
-        self.setFixedHeight(420)
         self.table = QTableWidget()
         self.table.setFixedHeight(250)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -108,7 +107,7 @@ class MainWindow(QWidget):
                     self.status = QLabel(f"Статус пользователя: Руководитель, Вы имеете полный доступ к договорам.")
                     self.layoutQV.addWidget(self.welcome_label)
                     self.layoutQV.addWidget(self.status)
-
+                    self.setFixedHeight(420)
                     add_buttom = QPushButton("Добавить договор")
                     add_buttom.setFixedWidth(180)
                     add_buttom.clicked.connect(self.reloadTable)
@@ -122,7 +121,7 @@ class MainWindow(QWidget):
                     self.layoutQV.addWidget(self.welcome_label)
                     self.layoutQV.addWidget(self.status)
                     self.layoutQV.addWidget(self.status_add)
-
+                    self.setFixedHeight(460)
                 self.layoutQV.addLayout(panel_view)
             except Exception as error:
                 print("Ошибка при подгрузке данных с PostgreSQL:", error)
@@ -162,36 +161,44 @@ class MainWindow(QWidget):
                                 "FROM contract cn JOIN head h ON cn.head_id = h.id JOIN executor ex ON cn.executor_id = ex.id "+
                                 "WHERE ex.executor_username = %s", (self.username,))
                 records = cursor.fetchall()
+
+                if not records:
+                    QMessageBox.information(self, "Пусто", "Записи отсутствуют.")
+                    self.table.setRowCount(0)
+                    return
+
             except Exception as error:
                 print("Ошибка при подгрузке данных с PostgreSQL:", error)
                 QMessageBox.warning(self, "Ошибка БД", "Ошибка при подгрузке данных с БД.")
                 cursor.close()
                 connection.close()
+                return
             finally:
                 cursor.close()
                 connection.close()
 
-        self.table.setRowCount(len(records))
-        self.table.setColumnCount(len(records[0])) 
-        headers = ["Номер договора", "Статус", "Наименование договора", "ФИО руководителя",
-                   "ФИО агента", "Компания", "Дата заключения", "Срок действия", "Полная информация"]
-        if self.role == "head": 
-            self.table.setColumnCount(len(records[0]) + 1) 
-            headers.append("Удалить договор")
-        self.table.setHorizontalHeaderLabels(headers)
+            self.table.setRowCount(len(records))
+            self.table.setColumnCount(len(records[0])) 
+            headers = ["Номер договора", "Статус", "Наименование договора", "ФИО руководителя",
+                    "ФИО агента", "Компания", "Дата заключения", "Срок действия", "Полная информация"]
+            if self.role == "head": 
+                self.table.setColumnCount(len(records[0]) + 1) 
+                headers.append("Удалить договор")
+            self.table.setHorizontalHeaderLabels(headers)
 
-        for i, row in enumerate(records):
-            for j, value in enumerate(row[1:]): 
-                self.table.setItem(i, j, QTableWidgetItem(str(value)))
-            open_button = QPushButton("Открыть")
-            open_button.clicked.connect(lambda _, i=i: self.openContract(records[i][0]))
-            self.table.setCellWidget(i, len(row) - 1, open_button)
+            for i, row in enumerate(records):
+                for j, value in enumerate(row[1:]): 
+                    self.table.setItem(i, j, QTableWidgetItem(str(value)))
+                open_button = QPushButton("Открыть")
+                open_button.clicked.connect(lambda _, i=i: self.openContract(records[i][0]))
+                self.table.setCellWidget(i, len(row) - 1, open_button)
 
-            if self.role == "head":
-                delete_button = QPushButton("Удалить")
-                delete_button.clicked.connect(lambda _, i=i: self.confirm_delete(records[i][0]))
-                self.table.setCellWidget(i, len(row), delete_button)  
-        self.table.resizeColumnsToContents()
+                if self.role == "head":
+                    delete_button = QPushButton("Удалить")
+                    delete_button.clicked.connect(lambda _, i=i: self.confirm_delete(records[i][0]))
+                    self.table.setCellWidget(i, len(row), delete_button)  
+            self.table.resizeColumnsToContents()
+
 
     def confirm_delete(self, contract_id):
         confirm_dialog = QMessageBox.question(self, "Подтверждение удаления",
@@ -359,22 +366,78 @@ class ContractWindow(QDialog):
                 layout.addLayout(h_layout)
                 self.fields[header] = line_edit
                 if combo_box.currentText() in ["Согласован", "Закрыт"]: line_edit.setEnabled(False)
+            elif role == "head" and header in ["ФИО агента", "Номер телефона агента", "Почта агента", "Позиция агента", "Компания"]:
+                match header:
+                    case "ФИО агента":
+                        self.ex_name = QLineEdit(str(value))
+                        self.ex_name.setEnabled(False)
+                        h_layout = QHBoxLayout()
+                        h_layout.addWidget(label)
+                        h_layout.addWidget(self.ex_name)
+                        layout.addLayout(h_layout)
+                        self.fields[header] = self.ex_name
+                    case "Номер телефона агента":
+                        self.ex_phone = QLineEdit(str(value))
+                        self.ex_phone.setEnabled(False)
+                        h_layout = QHBoxLayout()
+                        h_layout.addWidget(label)
+                        h_layout.addWidget(self.ex_phone)
+                        layout.addLayout(h_layout)
+                        self.fields[header] = self.ex_phone 
+                    case "Почта агента":
+                        self.ex_email = QLineEdit(str(value))
+                        self.ex_email.setEnabled(False)
+                        h_layout = QHBoxLayout()
+                        h_layout.addWidget(label)
+                        h_layout.addWidget(self.ex_email)
+                        layout.addLayout(h_layout)
+                        self.fields[header] = self.ex_email
+                    case "Позиция агента":
+                        self.ex_pos = QLineEdit(str(value))
+                        self.ex_pos.setEnabled(False)
+                        h_layout = QHBoxLayout()
+                        h_layout.addWidget(label)
+                        h_layout.addWidget(self.ex_pos)
+                        layout.addLayout(h_layout)
+                        self.fields[header] = self.ex_pos
+                    case "Компания":
+                        self.ex_com = QLineEdit(str(value))
+                        self.ex_com.setEnabled(False)
+                        h_layout = QHBoxLayout()
+                        h_layout.addWidget(label)
+                        h_layout.addWidget(self.ex_com)
+                        layout.addLayout(h_layout)
+                        self.fields[header] = self.ex_com
+
+                        if combo_box.currentText() == "Создан": 
+                            change_executor = QPushButton("Сменить агента")
+                            change_executor.clicked.connect(self.open_executor_list)
+                            layout.addWidget(change_executor)
             else:
                 line_edit = QLineEdit(str(value))
-                line_edit.setReadOnly(True)
                 line_edit.setEnabled(False)
                 h_layout = QHBoxLayout()
                 h_layout.addWidget(label)
                 h_layout.addWidget(line_edit)
                 layout.addLayout(h_layout)
                 self.fields[header] = line_edit
-                if combo_box.currentText() in ["Согласован", "Закрыт"]: line_edit.setEnabled(False)
 
         save_button = QPushButton("Сохранить")
         save_button.clicked.connect(self.save_data)
         layout.addWidget(save_button)
-
         self.setLayout(layout)
+    
+    def open_executor_list(self):
+        self.executors_window = ChangeExecutorDialog(self, self.username, self.password)
+        self.executors_window.exec()
+
+    def update_executor_def(self, full_name, phone, email, pos, company_name):
+        self.ex_name.setText(full_name)
+        self.ex_phone.setText(phone)
+        self.ex_email.setText(email)
+        self.ex_pos.setText(pos)
+        self.ex_com.setText(company_name)
+
     def open_document(self):
         document_path = self.scan_document_edit.text()
         file = QFile(document_path)
@@ -474,7 +537,8 @@ class ContractWindow(QDialog):
                                 agreement_object = %s, 
                                 conclusion_date = %s, 
                                 agreement_term = %s, 
-                                document_scan = %s 
+                                document_scan = %s,
+                                executor_id = (SELECT id FROM executor WHERE full_name = %s)
                             WHERE id = %s;
                         """
                         cursor.execute(update_contract, (
@@ -484,6 +548,7 @@ class ContractWindow(QDialog):
                             self.fields["Дата заключения"].selectedDate().toString("yyyy-MM-dd"),
                             self.fields["Срок действия"].selectedDate().toString("yyyy-MM-dd"),
                             self.fields["Скан документа"].text(),
+                            self.fields["ФИО агента"].text(),
                             self.contract_id
                         ))
 
@@ -533,6 +598,66 @@ class ContractWindow(QDialog):
                     connection.close()
                     super().accept()
         self.close()
+
+class ChangeExecutorDialog(QDialog):
+    def __init__(self, contract_info, username, password):
+        super().__init__()
+        self.username = username
+        self.password = password
+        self.contract_info = contract_info
+        self.setWindowTitle("Выбор агента")
+        self.setGeometry(400, 400, 550, 250)
+        self.layout = QVBoxLayout(self)
+        self.table = QTableWidget()
+        self.layout.addWidget(self.table)
+
+        connection = connect(self.username, self.password)
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("SELECT id, full_name, company_name FROM executor")
+                records = cursor.fetchall()
+            except Exception as error:
+                print("Ошибка при подгрузке данных с PostgreSQL:", error)
+                QMessageBox.warning(self, "Ошибка БД", "Таблица агентов. Ошибка при подгрузке данных с БД.")
+                cursor.close()
+                connection.close()
+            finally:
+                cursor.close()
+                connection.close()
+
+        self.table.setRowCount(len(records))
+        self.table.setColumnCount(len(records[0])) 
+        headers = ["ФИО агента", "Компания", "Выбор агента"]
+        self.table.setHorizontalHeaderLabels(headers)
+
+        for i, row in enumerate(records):
+            for j, value in enumerate(row[1:]): 
+                self.table.setItem(i, j, QTableWidgetItem(str(value)))
+            choose_button = QPushButton("Выбрать")
+            choose_button.clicked.connect(lambda _, i=i: self.confirm_executor(records[i][0]))
+            self.table.setCellWidget(i, len(row) - 1, choose_button)
+        self.table.resizeColumnsToContents()
+    
+    def confirm_executor(self, executor_id):
+        connection = connect(self.username, self.password)
+        if connection:
+            cursor = connection.cursor()
+            try:
+                cursor.execute("SELECT full_name, phone_number, email, company_name, executor_position FROM executor WHERE id = %s", (executor_id,))
+                data = cursor.fetchall()
+            except Exception as error:
+                print("Ошибка при подгрузке данных с PostgreSQL:", error)
+                QMessageBox.warning(self, "Ошибка БД", "Таблица агентов. Ошибка при подгрузке данных с БД.")
+                cursor.close()
+                connection.close()
+            finally:
+                cursor.close()
+                connection.close()
+            self.contract_info.update_executor_def(data[0][0], data[0][1], data[0][2], data[0][3], data[0][4])
+            self.close()
+        
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

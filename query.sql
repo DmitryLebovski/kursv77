@@ -59,7 +59,7 @@ CREATE TABLE contract(
 	agreement_term DATE NOT NULL,
 	agreement_object TEXT,
 	status varchar(100) NOT NULL,
-	document_scan BYTEA,
+	document_scan TEXT,
 	executor_id INT,
 	head_id INT,
 	FOREIGN KEY (executor_id) REFERENCES executor(id),
@@ -90,13 +90,10 @@ INSERT INTO executor (full_name, phone_number, email, company_name, executor_pos
 ('Никитин Денис Александрович', '+7(999)777-88-99', 'nikitin@example.com', 'ООО "ТехноСервис"', 'Финансовый директор', 'nikitin_da', 3);
 
 -- Данные для таблицы "contract"
-INSERT INTO contract (contract_num, conclusion_date, agreement_term, agreement_object, status, executor_id, head_id) VALUES ('КТ-005', '2000-02-10', '2025-08-10', 'без доп условий', 'Закрыт', 1, 3);
-
-('КТ-001', '2024-04-15', '2024-10-15', 'Строительство жилого комплекса', 'Действующий', 1, 1),
+INSERT INTO contract (contract_num, conclusion_date, agreement_term, agreement_object, status, executor_id, head_id) VALUES
+('КТ-001', '2024-04-15', '2024-10-15', 'Строительство жилого комплекса', 'Создан', 1, 1),
 ('КТ-002', '2024-03-20', '2024-09-20', 'Разработка программного обеспечения', 'В ожидании', 2, 2),
-('КТ-003', '2024-02-10', '2024-08-10', 'Поставка оборудования', 'Закрыт', 3, 3);
-('КТ-004', '2000-02-10', '2025-08-10', 'Проверка удаления', 'Закрыт', 1, 3);
-
+('КТ-003', '2024-02-10', '2024-08-10', 'Поставка оборудования', 'Закрыт', 3, 3),
 
 -- Данные для таблицы "extra_condition"
 INSERT INTO extra_condition (agreement_extras, contract_id) VALUES 
@@ -109,8 +106,21 @@ SELECT * FROM executor
 SELECT * FROM contract
 SELECT * FROM extra_condition
 
+select id, full_name, company_name from executor
+select id from executor where full_name = 'Кузнецова Елена Игоревна'
+select full_name, phone_number, email, company_name, executor_position from executor where id = 1
+
+SELECT * 
+FROM contract cn 
+JOIN executor ex ON cn.executor_id = ex.id;
+
+select id from executor where full_name = 'Кузнецова Елена Игоревна'
+
+update contract cn set executor_id = (select id from executor where full_name = 'Кузнецова Елена Игоревна') where cn.id = 1
+
+
 DELETE from extra_condition where contract_id=(select id from contract where contract_num='апдейт')
-DELETE from contract where id'апдейт'
+DELETE from contract where id 'апдейт'
 
 DELETE FROM contract
 DELETE FROM extra_condition
@@ -146,6 +156,7 @@ JOIN
     executor ex ON cn.executor_id = ex.id
 LEFT JOIN 
     extra_condition exc ON cn.id = exc.contract_id;
+
 	
 	
 UPDATE contract AS cn
