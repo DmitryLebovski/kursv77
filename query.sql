@@ -209,3 +209,169 @@ FOR EACH ROW
 EXECUTE FUNCTION update_contract_trigger();
 
 
+
+
+
+
+
+
+
+
+
+
+--Практика:
+CREATE TABLE test(t1 integer, t2 text); insert into test
+select i, md5(random()::text) from generate_series(1, 1000000) as i;
+
+create table test_join(j1 integer, j2 boolean); insert into test_join
+select i, i%2=1
+from generate_series(1,500000) as i;
+
+select * from test;
+select * from test_join;
+
+drop table test;
+drop table test_join;
+
+select * from test t join test_join tj on t.t1 = tj.j1;
+
+explain select * from test t join test_join tj on t.t1 = tj.j1; --60081.00
+explain select * from test t join test_join tj on t.t1 = tj.j1 limit 10000; -- 12438.64
+
+create index idx_j1 on test_join(j1);
+explain select * from test t join test_join tj on t.t1 = tj.j1; --60081.00
+explain select * from test t join test_join tj on t.t1 = tj.j1 limit 10000; -- 9654.05 nested loop
+
+create index idx_t1 on test(t1);
+explain select * from test t join test_join tj on t.t1 = tj.j1; -- 39835.86  merge join
+explain select * from test t join test_join tj on t.t1 = tj.j1 limit 10000; -- 798.19 merge join
+
+drop index idx_t1;
+drop index idx_j1;
+
+explain select * from test t join test_join tj on t.t1 = tj.j1; --60081.00 join запрос
+explain select * from test t where t1 in (select j1 from test_join)-- 59518.50 не коррелированный запрос
+explain select * from test t where exists(select * from test_join tj where t.t1 = tj.j1 ) -- 59518.50 коррелированный запрос
+
+explain analyze select * from test t join test_join tj on t.t1 = tj.j1; --60081.00 join запрос
+--464 ms
+explain analyze select * from test t where t1 in (select j1 from test_join)-- 59518.50 некоррелированный запрос
+--473 ms
+explain analyze select * from test t where exists(select * from test_join tj where t.t1 = tj.j1 ) -- 59518.50 коррелированный запрос
+-- 461 ms
+-- векторная - возв таблица, скаляр - возвр значение
+
+
+
+
+
+
+create table groups
+(
+	id serial primary key not null,
+	name text
+);
+
+create table students
+(
+	id serial primary key not null,
+	fio text,
+	age int,
+	group_id int
+);
+
+insert into groups(name) values ('bsbo-01-22'), ('bsbo-(-01)-22')
+insert into students(fio, age, group_id) values ('Петухович Вениамин', 65, 2), ('Полено Лена', 20, 1), 
+('Пупкин Фёдор', 21, 1), ('Лампасосов Венидикт', 24, 1), ('Гопкин Гордей', 20, 2);
+select * from students
+
+--view выполняет запрос
+create view v_students as
+	select fio, age from students; -- простое обновляемое представления
+select * from v_students
+insert into v_students(fio, age) values ('Иванов Иван', 25)
+delete from v_students where fio='Иванов Иван';
+
+create view v_students_group as
+select s.fio, s.age, g.name from students s join groups g on s.group_id = g.id; --сложное не обновляемое представление
+select * from v_students_group
+
+delete from v_students_group where age = 20 -- ошибка из-за join
+
+
+
+--тригерная функция ДОБАВЛЕНИЯ данные в соединенные таблицы studens, groups
+create function insert_v_students_group() 
+returns trigger language plpgsql as $$
+declare
+	g_id integer;
+begin
+	select id into g_id from groups where name = NEW.name;
+	insert into students(fio, age, group_id) values (NEW.fio, NEW.age, g_id);
+	return null;
+end;$$
+-- триггер
+create trigger insert_st_group instead of insert on v_students_group 
+for each row
+execute procedure insert_v_students_group();
+insert into insert_v_students_group(fio, age, name) values('Иванов Иван', 23, 'bsbo-01-22');
+
+--тригерная функция ОБНОВЛЕНИЯ данных в соединенные таблицы studens, groups
+-- триггер
+create trigger update_st_group instead of insert on v_students_group 
+for each row
+execute procedure update_v_students_group();
+
+--функция
+CREATE FUNCTION update_v_students_group()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+	st_id INTEGER;
+	g_id INTEGER;
+BEGIN
+	SELECT id INTO g_id FROM groups WHERE name = OLD.name;
+	SELECT id INTO st_id FROM students WHERE fio = OLD.fio AND age = OLD.age;
+	
+	UPDATE students st SET
+	fio = NEW.fio,
+	age = NEW.age,
+	group_id = g_id WHERE id = st.id;
+	return NULL;
+END;$$
+
+UPDATE v_students_group SET fio='Bob', age=30, name='bsbo-01-22' where fio='Иванов Иван', age = 23, name='bsbo-01-22'
+
+--материализованное представление 
+create materialized view vm_students as
+select s.fio, s.age, g.name from students s join groups g on s.group_id = g.id;
+select * from vm_students; -- работает, в ней хранится набор данных
+insert into students(fio, age, group_id) values ('Курочкин Апполон', 44, 1)
+--мат. пред. не обновляется, апполона нет, решается с помощью refresh()
+refresh materialized view vm_students;
+select * from vm_students;
+
+
+
+
+
+--курсор
+DO
+$$
+DECLARE 
+	cur REFCURSOR;
+	g_id INTEGER;
+BEGIN
+	OPEN cur FOR SELECT id FROM groups;
+	LOOP
+	FETCH cur INTO g_id;
+	IF NOT FOUND THEN EXIT;
+	END IF;
+	IF (g_id > 1) THEN
+	DELETE FROM groups where id = g_id;
+	END IF;
+	END LOOP;
+	CLOSE cur;
+END;$$
+
+select * from groups -- осталась группа с id = 1, остальные удалились
+select * from students

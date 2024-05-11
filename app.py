@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (QApplication,
                             QDialog, 
                             QComboBox,
                             QCalendarWidget)
+from PyQt6.QtCore import Qt
 from db import connect
 
 class LoginWindow(QWidget):
@@ -82,15 +83,22 @@ class MainWindow(QWidget):
         self.setWindowTitle("Список договоров")
         self.layoutQV = QVBoxLayout()
         self.setFixedWidth(1550)
-        self.setFixedHeight(500)
+        self.setFixedHeight(420)
         self.table = QTableWidget()
-        self.table.setFixedHeight(350)
+        self.table.setFixedHeight(250)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         connection = connect(self.username, self.password)
         if connection:
             cursor = connection.cursor()
             try:
+                panel_view = QHBoxLayout()
+                panel_view.setAlignment(Qt.AlignmentFlag.AlignLeft)  # Aligns contents to the top
+                update_buttom = QPushButton("Обновить таблицу")
+                update_buttom.setFixedWidth(180)
+                update_buttom.clicked.connect(self.reloadTable)
+                panel_view.addWidget(update_buttom)
+
                 if self.role == "head":
                     cursor.execute("SELECT h.full_name FROM head h WHERE h.head_username =  %s", (self.username,))
                     full_name_v = cursor.fetchone()[0]
@@ -98,6 +106,11 @@ class MainWindow(QWidget):
                     self.status = QLabel(f"Статус пользователя: Руководитель, Вы имеете полный доступ к договорам.")
                     self.layoutQV.addWidget(self.welcome_label)
                     self.layoutQV.addWidget(self.status)
+
+                    add_buttom = QPushButton("Добавить договор")
+                    add_buttom.setFixedWidth(180)
+                    add_buttom.clicked.connect(self.reloadTable)
+                    panel_view.addWidget(add_buttom)
                 elif self.role == "executor":
                     cursor.execute("SELECT ex.full_name FROM executor ex WHERE ex.executor_username = %s", (self.username,))
                     full_name_v = cursor.fetchone()[0]
@@ -107,10 +120,8 @@ class MainWindow(QWidget):
                     self.layoutQV.addWidget(self.welcome_label)
                     self.layoutQV.addWidget(self.status)
                     self.layoutQV.addWidget(self.status_add)
-                update_buttom = QPushButton("Обновить таблицу")
-                update_buttom.setFixedWidth(130)
-                update_buttom.clicked.connect(self.reloadTable)
-                self.layoutQV.addWidget(update_buttom)
+
+                self.layoutQV.addLayout(panel_view)
             except Exception as error:
                 print("Ошибка при подгрузке данных с PostgreSQL:", error)
                 QMessageBox.warning(self, "Ошибка БД", "Ошибка при подгрузке данных с БД.")
@@ -282,14 +293,16 @@ class ContractWindow(QDialog):
         
         self.fields = {}  
 
-        label = QLabel("Статус")
+        h_layout = QHBoxLayout()
+        label = QLabel("<b>Статус</b>")
         combo_box = QComboBox()
         combo_box.addItems(["Создан", "Согласован", "Закрыт"])
         combo_box.setCurrentText(status)
-        layout.addWidget(label)
-        layout.addWidget(combo_box)
+        h_layout.addWidget(label)
+        h_layout.addWidget(combo_box)
         self.fields["Статус"] = combo_box
         if role == "executor" or combo_box.currentText() == "Закрыт": combo_box.setEnabled(False)
+        layout.addLayout(h_layout)
 
         for header, value in zip(headers, result):
             label = QLabel(header)
@@ -339,8 +352,6 @@ class ContractWindow(QDialog):
                 layout.addLayout(h_layout)
                 self.fields[header] = line_edit
                 if combo_box.currentText() in ["Согласован", "Закрыт"]: line_edit.setEnabled(False)
-
-        
 
         save_button = QPushButton("Сохранить")
         save_button.clicked.connect(self.save_data)
@@ -493,5 +504,3 @@ if __name__ == "__main__":
     login_window = LoginWindow()
     login_window.show()
     app.exec()
-
- 
