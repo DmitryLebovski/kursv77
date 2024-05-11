@@ -84,7 +84,7 @@ class MainWindow(QWidget):
         self.setFixedWidth(1550)
         self.setFixedHeight(500)
         self.table = QTableWidget()
-        self.table.setFixedHeight(300)
+        self.table.setFixedHeight(350)
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
         connection = connect(self.username, self.password)
@@ -209,7 +209,6 @@ class MainWindow(QWidget):
 
     def openContract(self, contract_id): 
         headers = ["Номер договора",
-                   "Статус",
                    "Наименование договора",
                    "ФИО руководителя",
                    "Номер телефона руководителя",
@@ -245,7 +244,6 @@ class ContractWindow(QDialog):
                 cursor.execute("""
                     SELECT 
                         cn.contract_num AS "Номер договора", 
-                        cn.status AS "Статус", 
                         cn.agreement_object AS "Наименование договора", 
                         h.full_name AS "ФИО руководителя", 
                         h.phone_number AS "Номер телефона руководителя", 
@@ -269,6 +267,10 @@ class ContractWindow(QDialog):
                         extra_condition exc ON cn.id = exc.contract_id
                     WHERE cn.id = %s""", (contract_id,))
                 result = cursor.fetchone()
+
+                cursor.execute("""
+                    SELECT status FROM contract WHERE id = %s""", (contract_id,))
+                status = cursor.fetchone()[0]
             except Exception as error:
                 print("Ошибка при подгрузке данных с PostgreSQL:", error)
                 QMessageBox.warning(self, "Ошибка БД", "Данные контракта. Ошибка при подгрузке данных с БД.")
@@ -280,17 +282,18 @@ class ContractWindow(QDialog):
         
         self.fields = {}  
 
+        label = QLabel("Статус")
+        combo_box = QComboBox()
+        combo_box.addItems(["Создан", "Согласован", "Закрыт"])
+        combo_box.setCurrentText(status)
+        layout.addWidget(label)
+        layout.addWidget(combo_box)
+        self.fields["Статус"] = combo_box
+        if role == "executor" or combo_box.currentText() == "Закрыт": combo_box.setEnabled(False)
+
         for header, value in zip(headers, result):
             label = QLabel(header)
-            if header == "Статус":
-                combo_box = QComboBox()
-                combo_box.addItems(["Создан", "Согласован/В работе", "Закрыт"])
-                combo_box.setCurrentText(value)
-                layout.addWidget(label)
-                layout.addWidget(combo_box)
-                self.fields[header] = combo_box
-                if role == "executor": combo_box.setEnabled(False)
-            elif header in ["Дата заключения", "Срок действия"]:
+            if header in ["Дата заключения", "Срок действия"]:
                 calendar_widget = QCalendarWidget()
                 calendar_widget.setSelectedDate(value)
                 h_layout = QHBoxLayout()
@@ -298,6 +301,7 @@ class ContractWindow(QDialog):
                 h_layout.addWidget(calendar_widget)
                 layout.addLayout(h_layout)
                 self.fields[header] = calendar_widget
+                if combo_box.currentText() in ["Согласован", "Закрыт"]: calendar_widget.setEnabled(False)
             elif header == "Дополнительные условия":
                 text_edit = QTextEdit()
                 text_edit.setPlainText(value)
@@ -306,6 +310,7 @@ class ContractWindow(QDialog):
                 h_layout.addWidget(text_edit)
                 layout.addLayout(h_layout)
                 self.fields[header] = text_edit
+                if combo_box.currentText() in ["Согласован", "Закрыт"]: text_edit.setEnabled(False)
             elif role == "head" and header not in ["ФИО агента", "Номер телефона агента", "Почта агента", "Позиция агента", "Компания"]:
                 line_edit = QLineEdit(str(value))
                 line_edit.setReadOnly(False)
@@ -314,6 +319,7 @@ class ContractWindow(QDialog):
                 h_layout.addWidget(line_edit)
                 layout.addLayout(h_layout)
                 self.fields[header] = line_edit
+                if combo_box.currentText() in ["Согласован", "Закрыт"]: line_edit.setEnabled(False)
             elif role == "executor" and header not in ["Номер договора", "Наименование договора", "ФИО руководителя", "Номер телефона руководителя", "Почта руководителя"]:
                 line_edit = QLineEdit(str(value))
                 line_edit.setReadOnly(False)
@@ -322,6 +328,7 @@ class ContractWindow(QDialog):
                 h_layout.addWidget(line_edit)
                 layout.addLayout(h_layout)
                 self.fields[header] = line_edit
+                if combo_box.currentText() in ["Согласован", "Закрыт"]: line_edit.setEnabled(False)
             else:
                 line_edit = QLineEdit(str(value))
                 line_edit.setReadOnly(True)
@@ -331,7 +338,9 @@ class ContractWindow(QDialog):
                 h_layout.addWidget(line_edit)
                 layout.addLayout(h_layout)
                 self.fields[header] = line_edit
+                if combo_box.currentText() in ["Согласован", "Закрыт"]: line_edit.setEnabled(False)
 
+        
 
         save_button = QPushButton("Сохранить")
         save_button.clicked.connect(self.save_data)
