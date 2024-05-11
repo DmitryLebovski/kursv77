@@ -12,8 +12,10 @@ from PyQt6.QtWidgets import (QApplication,
                             QTableWidgetItem, 
                             QDialog, 
                             QComboBox,
-                            QCalendarWidget)
-from PyQt6.QtCore import Qt
+                            QCalendarWidget,
+                            QFileDialog)
+from PyQt6.QtCore import Qt, QFile, QUrl
+from PyQt6.QtGui import QDesktopServices
 from db import connect
 
 class LoginWindow(QWidget):
@@ -324,6 +326,21 @@ class ContractWindow(QDialog):
                 layout.addLayout(h_layout)
                 self.fields[header] = text_edit
                 if combo_box.currentText() in ["Согласован", "Закрыт"]: text_edit.setEnabled(False)
+            elif header == "Скан документа":
+                self.scan_document_edit = QLineEdit(str(value))
+                self.scan_document_edit.setEnabled(False)
+                scan_document_button_open = QPushButton("Открыть")
+                scan_document_button_open.clicked.connect(self.open_document)
+                scan_document_button_change = QPushButton("Изменить")
+                scan_document_button_change.clicked.connect(self.change_document)
+                if combo_box.currentText() in ["Согласован", "Закрыт"]: scan_document_button_change.setEnabled(False)
+                h_layout = QHBoxLayout()
+                h_layout.addWidget(label)
+                h_layout.addWidget(self.scan_document_edit)
+                h_layout.addWidget(scan_document_button_open)
+                h_layout.addWidget(scan_document_button_change)
+                layout.addLayout(h_layout)
+                self.fields[header] = self.scan_document_edit
             elif role == "head" and header not in ["ФИО агента", "Номер телефона агента", "Почта агента", "Позиция агента", "Компания"]:
                 line_edit = QLineEdit(str(value))
                 line_edit.setReadOnly(False)
@@ -358,6 +375,24 @@ class ContractWindow(QDialog):
         layout.addWidget(save_button)
 
         self.setLayout(layout)
+    def open_document(self):
+        document_path = self.scan_document_edit.text()
+        file = QFile(document_path)
+        if file.exists():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(document_path))
+            file.close()
+        else:
+            QMessageBox.warning(self, "Ошибка", "Не удалось открыть файл. Возможно, он не существует или к нему нет доступа.")
+
+    def change_document(self):
+        file_dialog = QFileDialog()
+        file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+        document_path, _ = file_dialog.getOpenFileName(self, "Выберите файл", "", "Изображения (*.jpg *.jpeg *.png);;PDF Файлы (*.pdf);;Документы (*.doc *.docx)")
+        if document_path:
+            self.scan_document_edit.setText(document_path)
+        else:
+            QMessageBox.warning(self, "Ошибка", "Не удалось выбрать файл или файл не поддерживается.")
+
 
     def validate_fields(self):
         for header, widget in self.fields.items():
@@ -504,3 +539,38 @@ if __name__ == "__main__":
     login_window = LoginWindow()
     login_window.show()
     app.exec()
+
+
+
+    #  elif header == "Скан документа":
+    #             self.scan_document_edit = QLineEdit(str(value))
+    #             self.scan_document_edit.setEnabled(False)
+    #             scan_document_button_open = QPushButton("Открыть")
+    #             scan_document_button_open.clicked.connect(self.open_document)
+    #             scan_document_button_change = QPushButton("Изменить")
+    #             scan_document_button_change.clicked.connect(self.change_document)
+    #             if combo_box.currentText() in ["Согласован", "Закрыт"]: scan_document_button_change.setEnabled(False)
+    #             h_layout = QHBoxLayout()
+    #             h_layout.addWidget(label)
+    #             h_layout.addWidget(self.scan_document_edit)
+    #             h_layout.addWidget(scan_document_button_open)
+    #             h_layout.addWidget(scan_document_button_change)
+    #             self.info_layout.addLayout(h_layout)
+
+    #  def open_document(self):
+    #     document_path = self.scan_document_edit.text()
+    #     file = QFile(document_path)
+    #     if file.exists():
+    #         QDesktopServices.openUrl(QUrl.fromLocalFile(document_path))
+    #         file.close()
+    #     else:
+    #         QMessageBox.warning(self, "Ошибка", "Не удалось открыть файл. Возможно, он не существует или к нему нет доступа.")
+
+    # def change_document(self):
+    #     file_dialog = QFileDialog()
+    #     file_dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
+    #     document_path, _ = file_dialog.getOpenFileName(self, "Выберите файл", "", "Изображения (*.jpg *.jpeg *.png);;PDF Файлы (*.pdf);;Документы (*.doc *.docx)")
+    #     if document_path:
+    #         self.scan_document_edit.setText(document_path)
+    #     else:
+    #         QMessageBox.warning(self, "Ошибка", "Не удалось выбрать файл или файл не поддерживается.")
