@@ -3,12 +3,15 @@ CREATE ROLE executor;
 
 -- Роль head может видеть и управлять всеми таблицами
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO head;
+GRANT USAGE, SELECT ON SEQUENCE contract_id_seq TO head;
+GRANT USAGE, SELECT ON SEQUENCE extra_condition_id_seq TO head;
 
 -- Роль executor может управлять только таблицами contract и extra_condition, но видеть все таблицы
 GRANT SELECT, INSERT, UPDATE, DELETE ON contract TO executor;
 GRANT SELECT, INSERT, UPDATE, DELETE ON extra_condition TO executor;
 GRANT SELECT, INSERT, UPDATE, DELETE ON executor TO executor;
-GRANT SELECT ON head TO executor;
+GRANT SELECT, INSERT, UPDATE, DELETE ON contract_log TO executor;
+
 
 CREATE USER ivanov_ii PASSWORD '12345';
 CREATE USER smirnov_av PASSWORD '12345';
@@ -88,6 +91,9 @@ INSERT INTO executor (full_name, phone_number, email, company_name, executor_pos
 ('Смирнов Алексей Владимирович', '+7(999)111-22-33', 'smirnov@example.com', 'ООО "Прогресс"', 'Генеральный директор', 'smirnov_av', 1),
 ('Кузнецова Елена Игоревна', '+7(999)444-55-66', 'kuznetsova@example.com', 'ООО "СтройИнвест"', 'Главный инженер', 'kuznetsova_ei', 2),
 ('Никитин Денис Александрович', '+7(999)777-88-99', 'nikitin@example.com', 'ООО "ТехноСервис"', 'Финансовый директор', 'nikitin_da', 3);
+
+INSERT INTO executor (full_name, phone_number, email, company_name, executor_position, executor_username, head_id) VALUES
+('Test1', '', 'smirnov@example.com', '', 'Генеральный директор', 'smirnov_av', 1)
 
 -- Данные для таблицы "contract"
 INSERT INTO contract (contract_num, conclusion_date, agreement_term, agreement_object, status, executor_id, head_id) VALUES
@@ -386,3 +392,154 @@ END;$$
 
 select * from groups -- осталась группа с id = 1, остальные удалились
 select * from students
+
+
+
+
+
+------------------------------------------------------------------------
+--Курсач
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO head;
+GRANT USAGE ON SCHEMA public TO head;
+GRANT ALL PRIVILEGES ON vm_executors TO head;
+GRANT ALL PRIVILEGES ON vm_executors TO executor;
+GRANT ALL PRIVILEGES ON executor_id_seq TO head;
+GRANT SELECT, INSERT, UPDATE, DELETE ON contract_log TO executor;
+ALTER MATERIALIZED VIEW vm_executors OWNER TO head; -- сработало
+
+select * from contract
+select * from executor
+select * from head
+SELECT full_name, id FROM head WHERE head_username =  'ivanov_ii'
+DELETE FROM executor WHERE id = 8
+INSERT INTO executor (full_name, phone_number, email, company_name, executor_position, executor_username, head_id) VALUES
+('TESTTESSTE', '+7(999)444-55-66', 'kuznetsova@example.com', 'ООО "СтройИнвест"', 'TESTTESSTETESTTESSTETESTTESSTE', 'TESTTESSTE', 2);
+
+--Case запрос
+SELECT 
+    cn.id, 
+    cn.contract_num, 
+    cn.status, 
+    cn.agreement_object, 
+    h.full_name as head_name, 
+    ex.full_name as executor_name, 
+    CASE 
+        WHEN ex.company_name IS NULL OR ex.company_name = '' THEN 'Компания отсутствует' 
+        ELSE ex.company_name 
+    END as company_name, 
+    cn.conclusion_date, 
+    cn.agreement_term 
+FROM 
+    contract cn 
+JOIN 
+    head h ON cn.head_id = h.id 
+JOIN 
+    executor ex ON cn.executor_id = ex.id;
+
+
+-- view для таблицы head с case запросом
+CREATE VIEW contract_view AS
+SELECT 
+    cn.id, 
+    cn.contract_num, 
+    cn.status, 
+    cn.agreement_object, 
+    h.full_name as head_name, 
+    ex.full_name as executor_name, 
+    CASE 
+        WHEN ex.company_name IS NULL OR ex.company_name = '' THEN 'Компания отсутствует' 
+        ELSE ex.company_name 
+    END as company_name, 
+    cn.conclusion_date, 
+    cn.agreement_term 
+FROM 
+    contract cn 
+JOIN 
+    head h ON cn.head_id = h.id 
+JOIN 
+    executor ex ON cn.executor_id = ex.id;
+
+DROP VIEW IF EXISTS contract_view
+	
+--функция для отображения view у executor
+CREATE FUNCTION executor_contract_view(executor_username text) 
+RETURNS TABLE (
+    id INT,
+    contract_num TEXT,
+    status TEXT,
+    agreement_object TEXT,
+    head_name TEXT,
+    executor_name TEXT,
+    company_name TEXT,
+    conclusion_date DATE,
+    agreement_term INT
+)
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT cn.id, cn.contract_num, cn.status, cn.agreement_object, h.full_name as head_name, 
+           ex.full_name as executor_name, ex.company_name, cn.conclusion_date, cn.agreement_term 
+    FROM contract cn 
+    JOIN head h ON cn.head_id = h.id 
+    JOIN executor ex ON cn.executor_id = ex.id 
+    WHERE ex.executor_username = executor_username;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Материализованное представление 
+create materialized view vm_executors as
+SELECT id, full_name, CASE
+WHEN company_name = '' THEN 'Самозанятый'
+ELSE company_name
+END AS company_name FROM executor;
+
+select * from vm_executors; -- работает, в ней хранится набор данных
+
+refresh materialized view vm_executors;
+select * from vm_executors;
+
+--Роли
+CREATE ROLE head;
+CREATE ROLE executor;
+
+-- Роль head может видеть и управлять всеми таблицами
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO head;
+GRANT USAGE ON SCHEMA public TO head;
+
+-- Роль executor может управлять только таблицами contract и extra_condition, contract_log, но видеть все таблицы
+GRANT SELECT, INSERT, UPDATE, DELETE ON contract TO executor;
+GRANT SELECT, INSERT, UPDATE, DELETE ON extra_condition TO executor;
+GRANT SELECT, INSERT, UPDATE, DELETE ON contract_log TO executor;
+
+
+CREATE USER ivanov_ii PASSWORD '12345';
+CREATE USER smirnov_av PASSWORD '12345';
+
+GRANT head TO ivanov_ii;
+GRANT executor TO smirnov_av;
+
+
+--OLAP
+CREATE TABLE contract_log (LIKE contract);
+ALTER TABLE contract_log 
+  ADD COLUMN action VARCHAR(1) NOT NULL,
+  ADD COLUMN time TIMESTAMP NOT NULL;
+  
+CREATE OR REPLACE FUNCTION insert_contract_log()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP='INSERT'  THEN 
+    INSERT INTO contract_log SELECT NEW.*, 'I', now();
+  ELSEIF TG_OP= 'UPDATE' THEN 
+    INSERT INTO contract_log SELECT NEW.*, 'U', now();
+  ELSEIF TG_OP = 'DELETE' THEN
+    INSERT INTO contract_log SELECT OLD.*, 'D', now();
+  END IF;
+  RETURN NULL;
+END; $$ LANGUAGE plpgsql;
+
+CREATE TRIGGER cont_log AFTER INSERT OR UPDATE OR DELETE ON contract
+  FOR EACH ROW 
+  EXECUTE PROCEDURE insert_contract_log();
+
+SELECT * FROM contract_log;
