@@ -274,6 +274,9 @@ class MainWindow(QWidget):
         if connection:
             cursor = connection.cursor()
             try:
+                
+                cursor.execute("SELECT full_name FROM executor ex WHERE ex.executor_username = %s", (self.username,))
+                ex_fullname = cursor.fetchall()[0]
                 if column_name in ["conc_d", "agr_d"]:
                     query = f"SELECT * FROM contract_view WHERE TO_CHAR({column_name}, 'YYYY-MM-DD') ILIKE %s"
                 else:
@@ -283,7 +286,7 @@ class MainWindow(QWidget):
                     cursor.execute(query, ('%' + value + '%',))
                 elif self.role == "executor":
                     query += " AND executor_name = %s"
-                    cursor.execute(query, ('%' + value + '%', self.username))
+                    cursor.execute(query, ('%' + value + '%', ex_fullname))
 
                 records = cursor.fetchall()
 
