@@ -126,14 +126,10 @@ JOIN
     head h ON cn.head_id = h.id 
 JOIN 
     executor ex ON cn.executor_id = ex.id;
-	
-CREATE INDEX idx_contract_head_id ON contract(head_id);
-CREATE INDEX idx_contract_ex_id ON contract(executor_id);
 
 select * from contract
 DELETE FROM extra_condition where id between 2000 and 4000
 DELETE FROM contract where id between 2070 and 3000
-
 	
 DROP VIEW IF EXISTS contract_view
 
@@ -215,6 +211,98 @@ JOIN
 LEFT JOIN 
     extra_condition exc ON cn.id = exc.contract_id;
 	
+--многотабличный view с возможностью обновления
+select * from v_executor_head
+
+CREATE VIEW v_executor_head AS
+SELECT ex.full_name, ex.phone_number, ex.email, ex.company_name, ex.executor_position, ex.executor_username,
+h.head_username as head_name FROM executor ex
+JOIN head h ON ex.head_id = h.id;
+
+drop trigger insert_head_to_ex on v_executor_head;
+drop function insert_v_head_to_ex();
+drop trigger update_head_to_ex on v_executor_head;
+drop function update_v_head_to_ex();
+drop trigger delete_head_to_ex on v_executor_head;
+drop function delete_v_head_to_ex();
+
+--триггер на операцию insert
+INSERT INTO v_executor_head VALUES ('1', '1', '12@', '123', '1234', '123456', 'ivanov_ii');
+SELECT * FROM executor
+
+CREATE FUNCTION insert_v_head_to_ex()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+	h_id integer;
+BEGIN
+	SELECT id INTO h_id FROM head WHERE head_username = NEW.head_name;
+	INSERT INTO executor(full_name, phone_number, email, 
+						 company_name, executor_position, executor_username, head_id)
+						 VALUES (NEW.full_name, NEW.phone_number, NEW.email, 
+						 NEW.company_name, NEW.executor_position, NEW.executor_username, h_id);
+	RETURN NEW;
+END; $$;
+
+CREATE TRIGGER insert_head_to_ex 
+INSTEAD OF INSERT ON v_executor_head
+FOR EACH ROW 
+EXECUTE FUNCTION insert_v_head_to_ex();
+
+--триггер на операцию update
+UPDATE v_executor_head SET
+full_name = '444',
+phone_number = '111', 
+email = '003@', 
+company_name = '004', 
+executor_position = '005', 
+executor_username = 'kuznetsova_ei',
+head_name = 'ivanov_ii';
+select * from executor
+	SELECT id  FROM executor WHERE executor_username = 'kuznetsova_ei';
+rollback;
+
+CREATE FUNCTION update_v_head_to_ex()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+	ex_id integer;
+	h_id integer;
+BEGIN
+	SELECT id INTO h_id FROM head WHERE head_username = NEW.head_name;
+	SELECT id INTO ex_id FROM executor WHERE executor_username = NEW.executor_username;
+	
+	UPDATE executor ex SET
+		full_name = NEW.full_name,
+		phone_number = NEW.phone_number, 
+		email = NEW.email, 
+		company_name = NEW.company_name, 
+		executor_position = NEW.executor_position, 
+		head_id = h_id WHERE ex.id = ex_id;
+	RETURN NEW;
+END; $$
+
+CREATE TRIGGER update_head_to_ex
+INSTEAD OF UPDATE ON v_executor_head
+FOR EACH ROW
+EXECUTE FUNCTION update_v_head_to_ex();
+
+--триггер на операцию delete
+DELETE FROM executor WHERE executor_username= '123456';
+select * from executor
+
+CREATE FUNCTION delete_v_head_to_ex()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+	DELETE FROM executor WHERE executor_username= OLD.executor_username;
+	RETURN NEW;
+END; $$
+
+CREATE TRIGGER delete_head_to_ex
+INSTEAD OF DELETE ON v_executor_head
+FOR EACH ROW
+EXECUTE FUNCTION delete_v_head_to_ex();
+
+
+
 CREATE INDEX idx_contract_id ON contract(id);
 CREATE INDEX idx_contract_head_id ON contract(head_id);
 CREATE INDEX idx_contract_executor_id ON contract(executor_id);
@@ -237,10 +325,18 @@ EXPLAIN SELECT c.contract_num, c.status FROM contract c LEFT JOIN extra_conditio
 CREATE INDEX idx_head_id ON head(id)
 EXPLAIN SELECT h.full_name, ex.full_name FROM executor ex JOIN head h ON h.id = ex.head_id WHERE h.head_username = 'ivanov_ii'
 
+CREATE INDEX idx_contract_head_id ON contract(head_id)
+EXPLAIN SELECT * FROM contract WHERE head_id = '3'
+
+CREATE INDEX idx_contract_name ON contract(contract_num)
+EXPLAIN SELECT * FROM contract WHERE contract_num = 'КТ-120'
+
+
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX idx_gin_ex_name ON executor USING gin(full_name gin_trgm_ops);
-EXPLAIN ANALYSE SELECT full_name FROM executor WHERE full_name LIKE 'Иванов'
+EXPLAIN ANALYSE SELECT full_name FROM executor WHERE full_name LIKE 'Ива'
 
+select * from executor
 
 CREATE INDEX idx_contract_agr_t ON contract USING brin(agreement_term)
 EXPLAIN ANALYZE SELECT agreement_term from contract
@@ -423,6 +519,10 @@ BEFORE UPDATE ON executor
 FOR EACH ROW
 EXECUTE FUNCTION check_email_format();
 
+CREATE TRIGGER trigger_check_email_format_insert_ex
+BEFORE INSERT ON executor
+FOR EACH ROW
+EXECUTE FUNCTION check_email_format();
 
 -- Очень странный триггер на добавление/обновление agreement_extras
 CREATE OR REPLACE FUNCTION check_agreement_extras()
@@ -446,13 +546,19 @@ FOR EACH ROW
 EXECUTE FUNCTION check_agreement_extras();
 
 -- Подзапрос SELECT
-UPDATE head AS h
-SET 
-	full_name = %s,
-	phone_number = %s,
-	email = %s
-WHERE 
-	h.id = (SELECT head_id FROM contract WHERE contract_num = %s)
+CREATE OR REPLACE FUNCTION count_executor_contracts()
+RETURNS TABLE (ex_full_name VARCHAR, ex_contract_count BIGINT) AS $$
+BEGIN
+	RETURN QUERY
+	SELECT
+		full_name,
+		(SELECT COUNT(*) FROM contract c WHERE c.executor_id = ex.id) as contract_count
+	FROM executor ex;
+END; $$
+LANGUAGE plpgsql;
+SELECT * FROM count_executor_contracts();
+
+select * from executor
 	
 -- Подзапрос FROM
 SELECT
@@ -552,6 +658,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+
+
 select update_agreement_term();
 select * from contract;
 
@@ -612,20 +720,7 @@ WHERE
 SELECT * from contract
 
 --Коррелированные подзапросы
-SELECT 
-    h.id,
-    h.full_name,
-    h.phone_number,
-    h.email,
-    h.head_username
-FROM 
-    head h
-WHERE 
-    EXISTS (
-        SELECT 1
-        FROM contract c
-        WHERE c.head_id = h.id AND c.status = 'Создан'
-    );
+contract_view
 	
 CREATE OR REPLACE FUNCTION get_table_status
 	
@@ -676,7 +771,6 @@ CREATE USER smirnov_av PASSWORD '12345';
 GRANT head TO ivanov_ii;
 GRANT executor TO smirnov_av;
 
-
 --Функция добавления агента
 CREATE OR REPLACE FUNCTION insert_user(fn varchar, pn varchar, em varchar, cpnm varchar, exps varchar, exus varchar, h_id INTEGER)
 RETURNS VOID AS $$
@@ -700,7 +794,6 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION drop_user(ex_id INT, ex_usnm VARCHAR)
 RETURNS VOID AS $$
 BEGIN
-	EXECUTE format('DROP USER %I', ex_usnm);
     DELETE FROM executor WHERE id = ex_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -794,8 +887,6 @@ $$;
 
  SELECT EXISTS(SELECT 1 FROM contract WHERE contract_num = 'ЖДВАОЬЖВЫДА')
 
-
-call add_contract_final_procedure('ЖДВАОЬЖВЫДА', 'ИМЬТЧСИМЬЧСМЬСЧ', 'ИМЬТЧСИМЬЧСМЬСЧ', 'TesИМЬТЧСИМЬЧСМЬСЧt', 'Test', 1, 2,'2024-01-01','2025-01-01', '', 'Test')
 
 select * from contract
 select * from head
